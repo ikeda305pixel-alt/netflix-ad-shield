@@ -1,0 +1,64 @@
+name: Build Netflix Ad Shield APK
+
+on:
+  push:
+    branches:
+      - main
+      - feat/*
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Test & Build Debug APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Run Unit Tests & Build Debug APK
+        run: |
+          gradle testDebugUnitTest --stacktrace
+          gradle assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.0.0.apk
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: netflix-ad-shield-v1.0.0.apk
+          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.0.apk
+          retention-days: 14
+
+      - name: Create GitHub Release with APK
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: Netflix Ad Shield v1.0.0
+          body: |
+            ## Netflix Ad Shield v1.0.0
+
+            公式Netflix Androidアプリ（`com.netflix.mediaclient`）の広告再生中だけ、自動で消音＆真っ黒な省電力カバーを表示する自分用Androidユーティリティです。
+
+            ### 主な機能
+            - **自動ミュート＆復元**: 広告開始時にメディア音量を自動で0にし、広告終了時に元の音量へ復帰
+            - **真っ黒な省電力カバー**: 中央に「広告ミュート中」＋経過時間＋大きな1タップ「強制解除」ボタンのみ表示（`FLAG_NOT_FOCUSABLE` により裏のNetflix広告再生を止めません）
+            - **安全設計（フェイルセーフ）**: 最大自動解除タイマー（デフォルト90秒）、1タップ強制解除＆クールダウン、アプリ離脱・画面OFF時の即時復元
+            - **実機UIノード診断モード（PC/ADB不要）**: Netflix画面右上に「ログ採取」ボタンを表示し、広告再生中のUIノード一覧をスマホ単体で保存・コピー可能
+          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.0.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

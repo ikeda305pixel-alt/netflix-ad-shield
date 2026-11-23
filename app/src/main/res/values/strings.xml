@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Netflix Ad Shield</string>
+    <string name="app_subtitle">公式Netflixアプリの広告再生中だけ自動で消音＆暗転カバーする自分用ユーティリティ</string>
+    <string name="accessibility_service_description">Netflix公式アプリ（com.netflix.mediaclient）の画面UIのみをローカル監視し、広告再生中に自動消音と画面カバーを行います。外部送信は一切行いません。</string>
+    <string name="restricted_settings_hint">※ Android 13以降でユーザー補助がグレーアウトする場合は、端末の「設定 → アプリ → Netflix Ad Shield → 右上メニュー（⋮）→ 制限付き設定を許可」を先に実行してください。</string>
+    <string name="cover_title_muted">広告ミュート中</string>
+    <string name="cover_force_dismiss">強制解除（1タップ）</string>
+    <string name="diag_pill_label">ログ採取</string>
+    <string name="diag_log_empty">まだ診断スナップショットはありません。</string>
+</resources>
