@@ -29,38 +29,53 @@ data class AdDetectionResult(
 
 /**
  * Pure Kotlin ad-state classifier over Accessibility UI node snapshots.
- * Designed to avoid false positives on movie subtitles, titles, or normal scrubbers.
+ * Supports both legacy XML resource IDs (snake_case) and Netflix Jetpack Compose testTags (camelCase)
+ * plus TalkBack ad countdown descriptions, while avoiding false positives on subtitles or synopses.
  */
 class AdDetectionEngine {
 
     companion object {
-        private const val MAX_BADGE_TEXT_LENGTH = 28
+        private const val MAX_SHORT_BADGE_LENGTH = 28
+        private const val MAX_TALKBACK_DESC_LENGTH = 56
 
-        // Resource IDs strongly tied to ad badge / countdown / break indicators (never bare "ad")
+        // Normalized (underscores/hyphens removed, lowercased) ad-specific resource ID tokens.
+        // Matches both snake_case (ad_break_indicator) and Compose camelCase (adBreakProgressIndicator).
+        // Intentionally excludes bare "ad" / "ads" to prevent false triggers on benign views or empty hosts.
         private val DEFAULT_AD_RESOURCE_ID_TOKENS = listOf(
-            "ad_badge",
-            "ad_countdown",
-            "ad_timer",
-            "ad_break",
-            "ad_indicator",
-            "ad_label",
-            "ad_pill",
-            "ad_callout",
-            "ad_progress",
-            "ad_remaining",
-            "ads_badge",
-            "ads_countdown",
-            "player_ad_"
+            "adbadge",
+            "adcountdown",
+            "adtimer",
+            "adbreak",
+            "adindicator",
+            "adlabel",
+            "adpill",
+            "adcallout",
+            "adprogress",
+            "adremaining",
+            "adsbadge",
+            "adscountdown",
+            "playerad"
         )
 
-        // Anchored Japanese ad badge formats (e.g. "広告", "広告 1/2", "広告・0:30", "広告 残り 25秒")
+        // Anchored short Japanese ad badge formats (e.g. "広告", "広告 1/2", "広告・0:30", "広告 残り 25秒")
         private val JP_AD_BADGE_REGEX = Regex(
             """^広告(?:\s*[・•·:\-]\s*(?:\d+/\d+|\d+:\d+|\d+秒)|(?:\s+\d+\s*/\s*\d+)|(?:\s*\(\d+/\d+\))|(?:\s*残り\s*\d+(?::\d+|秒)))?$"""
         )
 
-        // Anchored English ad badge formats (e.g. "Ad", "Ad 1 of 2", "Ad · 0:30", "Ads · 0:45")
+        // Japanese TalkBack / Compose contentDescription (e.g. "2本中1本目の広告を再生中です。残り23秒です")
+        private val JP_TALKBACK_AD_REGEX = Regex(
+            """^(?:\d+本中\d+本目の)?広告を再生中です(?:[。．.\s]*残り\d+(?:分\d+秒|秒)です)?$"""
+        )
+
+        // Anchored short English ad badge formats (e.g. "Ad", "Ad 1 of 2", "Ad · 0:30", "Ads · 0:45")
         private val EN_AD_BADGE_REGEX = Regex(
             """^Ads?(?:\s*[・•·:\-]\s*(?:\d+\s*(?:of|/)\s*\d+|\d+:\d+)|(?:\s+\d+\s*(?:of|/)\s*\d+)|(?:\s*\(\d+\s*(?:of|/)\s*\d+\)))?$""",
+            RegexOption.IGNORE_CASE
+        )
+
+        // English TalkBack / Compose contentDescription (e.g. "Playing ad 1 of 2. 23 seconds remaining")
+        private val EN_TALKBACK_AD_REGEX = Regex(
+            """^(?:playing\s+)?ad\s+\d+\s+of\s+\d+(?:[.,\s]+\d+\s+seconds?\s+(?:remaining|left))?$""",
             RegexOption.IGNORE_CASE
         )
     }
@@ -78,17 +93,22 @@ class AdDetectionEngine {
             .map { it.trim().lowercase() }
             .filter { it.isNotEmpty() }
 
+        var resourceIdMatch: AdDetectionResult? = null
+        var badgeTextMatch: AdDetectionResult? = null
+        var customMatch: AdDetectionResult? = null
+
         for (node in nodes) {
-            val viewIdLower = node.viewId?.trim()?.lowercase().orEmpty()
-            if (viewIdLower.isNotEmpty()) {
-                val matchedDefaultId = DEFAULT_AD_RESOURCE_ID_TOKENS.firstOrNull { viewIdLower.contains(it) }
-                if (matchedDefaultId != null) {
-                    return AdDetectionResult(true, MatchReason.RESOURCE_ID, node.viewId)
+            val rawViewId = node.viewId?.trim().orEmpty()
+            if (rawViewId.isNotEmpty()) {
+                val idPart = rawViewId.substringAfter(":id/", rawViewId).lowercase()
+                val compactId = idPart.replace("_", "").replace("-", "")
+
+                if (resourceIdMatch == null && DEFAULT_AD_RESOURCE_ID_TOKENS.any { compactId.contains(it) }) {
+                    resourceIdMatch = AdDetectionResult(true, MatchReason.RESOURCE_ID, rawViewId)
                 }
 
-                val matchedCustomId = normalizedCustomIds.firstOrNull { viewIdLower.contains(it) }
-                if (matchedCustomId != null) {
-                    return AdDetectionResult(true, MatchReason.CUSTOM_RESOURCE_ID, node.viewId)
+                if (customMatch == null && normalizedCustomIds.any { idPart.contains(it) || rawViewId.lowercase().contains(it) }) {
+                    customMatch = AdDetectionResult(true, MatchReason.CUSTOM_RESOURCE_ID, rawViewId)
                 }
             }
 
@@ -99,22 +119,40 @@ class AdDetectionEngine {
 
             for (raw in candidates) {
                 val normalized = raw.replace(Regex("\\s+"), " ")
-                if (normalized.length <= MAX_BADGE_TEXT_LENGTH) {
-                    if (JP_AD_BADGE_REGEX.matches(normalized) || EN_AD_BADGE_REGEX.matches(normalized)) {
-                        return AdDetectionResult(true, MatchReason.BADGE_TEXT, normalized)
-                    }
+                if (badgeTextMatch == null && isAdBadgeOrTalkBack(normalized)) {
+                    badgeTextMatch = AdDetectionResult(true, MatchReason.BADGE_TEXT, normalized)
                 }
 
-                if (normalizedCustomKeywords.isNotEmpty() && normalized.length <= 64) {
+                if (customMatch == null && normalizedCustomKeywords.isNotEmpty() && normalized.length <= 64) {
                     val lower = normalized.lowercase()
-                    val matchedCustom = normalizedCustomKeywords.firstOrNull { lower.contains(it) }
-                    if (matchedCustom != null) {
-                        return AdDetectionResult(true, MatchReason.CUSTOM_KEYWORD, normalized)
+                    if (normalizedCustomKeywords.any { lower.contains(it) }) {
+                        customMatch = AdDetectionResult(true, MatchReason.CUSTOM_KEYWORD, normalized)
                     }
                 }
             }
         }
 
-        return AdDetectionResult(false, MatchReason.NONE, null)
+        // Prefer returning human-readable countdown text when present (great for live cover display)
+        if (resourceIdMatch != null && badgeTextMatch != null) {
+            return AdDetectionResult(true, MatchReason.RESOURCE_ID, badgeTextMatch.matchedSignal)
+        }
+        return badgeTextMatch
+            ?: resourceIdMatch
+            ?: customMatch
+            ?: AdDetectionResult(false, MatchReason.NONE, null)
+    }
+
+    private fun isAdBadgeOrTalkBack(normalized: String): Boolean {
+        if (normalized.length <= MAX_SHORT_BADGE_LENGTH) {
+            if (JP_AD_BADGE_REGEX.matches(normalized) || EN_AD_BADGE_REGEX.matches(normalized)) {
+                return true
+            }
+        }
+        if (normalized.length <= MAX_TALKBACK_DESC_LENGTH) {
+            if (JP_TALKBACK_AD_REGEX.matches(normalized) || EN_TALKBACK_AD_REGEX.matches(normalized)) {
+                return true
+            }
+        }
+        return false
     }
 }

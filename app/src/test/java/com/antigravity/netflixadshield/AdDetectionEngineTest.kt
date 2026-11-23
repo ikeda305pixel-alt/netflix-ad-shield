@@ -144,4 +144,48 @@ class AdDetectionEngineTest {
         assertFalse(result.isAdDetected)
         assertEquals(MatchReason.NONE, result.reason)
     }
+
+    @Test
+    fun detectsRealNetflixComposeAdSnapshotAndExtractsCountdownLabel() {
+        val realDeviceNodes = listOf(
+            UiNodeSnapshot("com.netflix.mediaclient:id/2131427693", "androidx.compose.ui.platform.ComposeView", null, null),
+            UiNodeSnapshot("Ads", "android.view.View", null, null),
+            UiNodeSnapshot("playerTappableContainerTestTag", "android.view.View", null, "ビデオプレーヤー"),
+            UiNodeSnapshot("playPauseButtonTestTag", "android.view.View", null, null),
+            UiNodeSnapshot("adBreakProgressIndicator", "android.view.View", null, null),
+            UiNodeSnapshot(null, "android.view.View", null, "2本中1本目の広告を再生中です。残り23秒です")
+        )
+
+        val result = engine.evaluate(realDeviceNodes, defaultConfig)
+        assertTrue("Expected detection on real Netflix Compose ad snapshot", result.isAdDetected)
+        assertEquals("2本中1本目の広告を再生中です。残り23秒です", result.matchedSignal)
+    }
+
+    @Test
+    fun detectsJapaneseAndEnglishTalkBackAdDescriptionsWithoutResourceId() {
+        val descriptions = listOf(
+            "2本中1本目の広告を再生中です。残り27秒です",
+            "広告を再生中です。残り15秒です",
+            "Playing ad 1 of 2. 23 seconds remaining",
+            "Ad 1 of 2, 15 seconds left"
+        )
+        for (desc in descriptions) {
+            val result = engine.evaluate(
+                nodes = listOf(UiNodeSnapshot(viewId = null, className = "android.view.View", text = null, contentDesc = desc)),
+                config = defaultConfig
+            )
+            assertTrue("Expected detection for TalkBack desc '$desc'", result.isAdDetected)
+            assertEquals(MatchReason.BADGE_TEXT, result.reason)
+        }
+    }
+
+    @Test
+    fun doesNotFalseTriggerOnBareAdsHostContainerAlone() {
+        val nodes = listOf(
+            UiNodeSnapshot("Ads", "android.view.View", null, null),
+            UiNodeSnapshot("playerTappableContainerTestTag", "android.view.View", null, "ビデオプレーヤー")
+        )
+        val result = engine.evaluate(nodes, defaultConfig)
+        assertFalse("Bare Ads host container without active ad indicator must not false-trigger", result.isAdDetected)
+    }
 }

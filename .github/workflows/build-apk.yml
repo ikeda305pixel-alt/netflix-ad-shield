@@ -33,32 +33,31 @@ jobs:
         run: |
           gradle testDebugUnitTest --stacktrace
           gradle assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.0.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.0.1.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: netflix-ad-shield-v1.0.0.apk
-          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.0.apk
+          name: netflix-ad-shield-v1.0.1.apk
+          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.1.apk
           retention-days: 14
 
       - name: Create GitHub Release with APK
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: Netflix Ad Shield v1.0.0
+          tag_name: v1.0.1
+          name: Netflix Ad Shield v1.0.1 (実機Netflix Compose広告ノード対応)
           body: |
-            ## Netflix Ad Shield v1.0.0
+            ## Netflix Ad Shield v1.0.1
 
-            公式Netflix Androidアプリ（`com.netflix.mediaclient`）の広告再生中だけ、自動で消音＆真っ黒な省電力カバーを表示する自分用Androidユーティリティです。
+            実機診断ログに基づき、最新の Netflix Android 公式アプリ（Jetpack Compose プレーヤー）の広告UIに完全対応しました。
 
-            ### 主な機能
-            - **自動ミュート＆復元**: 広告開始時にメディア音量を自動で0にし、広告終了時に元の音量へ復帰
-            - **真っ黒な省電力カバー**: 中央に「広告ミュート中」＋経過時間＋大きな1タップ「強制解除」ボタンのみ表示（`FLAG_NOT_FOCUSABLE` により裏のNetflix広告再生を止めません）
-            - **安全設計（フェイルセーフ）**: 最大自動解除タイマー（デフォルト90秒）、1タップ強制解除＆クールダウン、アプリ離脱・画面OFF時の即時復元
-            - **実機UIノード診断モード（PC/ADB不要）**: Netflix画面右上に「ログ採取」ボタンを表示し、広告再生中のUIノード一覧をスマホ単体で保存・コピー可能
-          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.0.apk
+            ### 改善内容
+            - **Netflix Compose 広告ノード対応**: `adBreakProgressIndicator`（キャメルケースID）および日本語/英語の広告再生中デスクリプション（`2本中1本目の広告を再生中です。残り23秒です` 等）を確実に検知
+            - **残り秒数のライブ表示**: 真っ黒カバー中央に Netflix 広告の残り秒数・本数（例: `2本中1本目の広告を再生中です。残り23秒です`）をリアルタイム表示
+            - **誤検知防止維持**: 字幕・あらすじや空の `Ads` ホストコンテナ単体では誤発動しないことを16件のユニットテストで検証済み
+          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.1.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

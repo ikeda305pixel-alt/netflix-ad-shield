@@ -67,10 +67,10 @@ class OverlayCoverManager(context: Context) {
 
         val signalCaption = TextView(themedContext).apply {
             text = formatSignal(signal)
-            setTextColor(Color.parseColor("#4A4A4A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(Color.parseColor("#8A8A8A"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(28))
+            setPadding(0, dp(4), 0, dp(28))
         }
 
         val dismissBg = GradientDrawable().apply {
@@ -211,7 +211,7 @@ class OverlayCoverManager(context: Context) {
     }
 
     private fun formatSignal(signal: String?): String {
-        return if (signal.isNullOrBlank()) "" else "検知: ${signal.take(32)}"
+        return if (signal.isNullOrBlank()) "" else signal.take(48)
     }
 
     private fun dp(value: Int): Int =
