@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import com.antigravity.netflixadshield.core.AdDetectionEngine
 import com.antigravity.netflixadshield.core.AdShieldStateMachine
 import com.antigravity.netflixadshield.core.DeactivateReason
@@ -61,8 +62,20 @@ class NetflixAdShieldService : AccessibilityService() {
         logStore = DiagnosticLogStore(this)
         volumeController = VolumeController(this)
         overlayManager = OverlayCoverManager(this)
-        registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+        ContextCompat.registerReceiver(
+            this,
+            screenOffReceiver,
+            IntentFilter(Intent.ACTION_SCREEN_OFF),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         isServiceRunning = true
+
+        // When enabled dynamically by NetflixWatchdogService while Netflix is already visible,
+        // begin scanning immediately without waiting for the next accessibility event.
+        if (findNetflixRootWindow() != null) {
+            isNetflixForeground = true
+            onNetflixEntered()
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

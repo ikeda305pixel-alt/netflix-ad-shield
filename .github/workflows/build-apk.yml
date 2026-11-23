@@ -31,33 +31,35 @@ jobs:
 
       - name: Run Unit Tests & Build Debug APK
         run: |
-          gradle testDebugUnitTest --stacktrace
-          gradle assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.0.1.apk
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.1.0.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: netflix-ad-shield-v1.0.1.apk
-          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.1.apk
+          name: netflix-ad-shield-v1.1.0.apk
+          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.1.0.apk
           retention-days: 14
 
       - name: Create GitHub Release with APK
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.1
-          name: Netflix Ad Shield v1.0.1 (実機Netflix Compose広告ノード対応)
+          tag_name: v1.1.0
+          name: Netflix Ad Shield v1.1.0 (PayPay両立・ユーザー補助自動ON/OFF対応)
           body: |
-            ## Netflix Ad Shield v1.0.1
+            ## Netflix Ad Shield v1.1.0
 
-            実機診断ログに基づき、最新の Netflix Android 公式アプリ（Jetpack Compose プレーヤー）の広告UIに完全対応しました。
+            PayPay等の決済アプリによるユーザー補助制限を回避するため、**Netflixがフォアグラウンドにある間だけ自動でユーザー補助をONにし、Netflixから離れたら即座にOFFへ戻す「PayPay両立モード」**を追加しました。
 
-            ### 改善内容
-            - **Netflix Compose 広告ノード対応**: `adBreakProgressIndicator`（キャメルケースID）および日本語/英語の広告再生中デスクリプション（`2本中1本目の広告を再生中です。残り23秒です` 等）を確実に検知
-            - **残り秒数のライブ表示**: 真っ黒カバー中央に Netflix 広告の残り秒数・本数（例: `2本中1本目の広告を再生中です。残り23秒です`）をリアルタイム表示
-            - **誤検知防止維持**: 字幕・あらすじや空の `Ads` ホストコンテナ単体では誤発動しないことを16件のユニットテストで検証済み
-          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.0.1.apk
+            ### 主な新機能
+            - **軽量フォアグラウンド監視 (`NetflixWatchdogService`)**: `UsageStatsManager` で1.5秒間隔ポーリング。画面消灯時は自動停止＆ユーザー補助OFFで省電力＋安全設計。
+            - **非破壊ユーザー補助切替 (`AccessibilityToggleHelper`)**: `WRITE_SECURE_SETTINGS` を使い、他アプリのユーザー補助設定を消さずに自身のコンポーネントのみ安全に追加・削除。
+            - **即時OFF＆チャタリング防止**: PayPayやホーム画面へ切り替わったら遅延なしで即OFF。SystemUIの一瞬の表示（音量バー等）のみ1回（1.5秒）猶予。
+            - **リアルタイム状態UI＆緊急強制OFFボタン**: 権限2種・監視サービス状態・ユーザー補助ON/OFFを常時表示。
+            - **初回ADB権限付与スクリプト (`setup_paypay_safe.ps1`)**: ビルド・インストール・権限付与を一括実行。
+          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.1.0.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

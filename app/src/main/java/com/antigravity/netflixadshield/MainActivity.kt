@@ -1,20 +1,26 @@
 package com.antigravity.netflixadshield
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.antigravity.netflixadshield.data.DiagnosticLogStore
 import com.antigravity.netflixadshield.data.ShieldPreferences
 import com.antigravity.netflixadshield.databinding.ActivityMainBinding
-import com.antigravity.netflixadshield.service.NetflixAdShieldService
+import com.antigravity.netflixadshield.service.AccessibilityToggleHelper
+import com.antigravity.netflixadshield.service.AccessibilityToggleResult
+import com.antigravity.netflixadshield.service.NetflixWatchdogService
 import com.antigravity.netflixadshield.service.OverlayCoverManager
 import com.antigravity.netflixadshield.service.VolumeController
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +43,12 @@ class MainActivity : AppCompatActivity() {
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var previewJob: Job? = null
 
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // Start watchdog regardless of whether user granted notification display
+            startWatchdogServiceNow()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -49,6 +61,7 @@ class MainActivity : AppCompatActivity() {
 
         bindInitialValues()
         bindListeners()
+        observeWatchdogState()
     }
 
     override fun onResume() {
@@ -75,6 +88,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindListeners() {
+        binding.btnGrantUsageStats.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        }
+
+        binding.btnToggleWatchdog.setOnClickListener {
+            if (NetflixWatchdogService.isServiceRunning) {
+                stopService(Intent(this, NetflixWatchdogService::class.java))
+                Toast.makeText(this, "自動切替監視を停止し、ユーザー補助をOFFにしました", Toast.LENGTH_SHORT).show()
+                refreshPermissionStatus()
+            } else {
+                requestStartWatchdog()
+            }
+        }
+
+        binding.btnForceAccessibilityOff.setOnClickListener {
+            if (NetflixWatchdogService.isServiceRunning) {
+                stopService(Intent(this, NetflixWatchdogService::class.java))
+            }
+            when (AccessibilityToggleHelper.setServiceEnabled(this, enable = false)) {
+                is AccessibilityToggleResult.Success -> {
+                    Toast.makeText(this, "ユーザー補助を即座にOFFにしました（PayPay安全）", Toast.LENGTH_SHORT).show()
+                }
+                is AccessibilityToggleResult.PermissionDenied -> {
+                    Toast.makeText(
+                        this,
+                        "ADB権限未付与のため自動OFF不可。setup_paypay_safe.ps1 を実行するか手動でOFFにしてください",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                is AccessibilityToggleResult.Failure -> {
+                    Toast.makeText(this, "ユーザー補助のOFFに失敗しました", Toast.LENGTH_SHORT).show()
+                }
+            }
+            refreshPermissionStatus()
+        }
+
         binding.btnGrantOverlay.setOnClickListener {
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -148,6 +197,53 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun observeWatchdogState() {
+        uiScope.launch {
+            NetflixWatchdogService.uiState.collect {
+                if (!isFinishing && !isDestroyed) {
+                    refreshPermissionStatus()
+                }
+            }
+        }
+    }
+
+    private fun requestStartWatchdog() {
+        if (!AccessibilityToggleHelper.hasWriteSecureSettingsPermission(this)) {
+            Toast.makeText(
+                this,
+                "ADB権限未付与（WRITE_SECURE_SETTINGS）。先に PC で setup_paypay_safe.ps1 を実行してください",
+                Toast.LENGTH_LONG
+            ).show()
+            refreshPermissionStatus()
+            return
+        }
+        if (!AccessibilityToggleHelper.hasUsageStatsPermission(this)) {
+            Toast.makeText(
+                this,
+                "先に「使用状況へのアクセス権限」を許可してください",
+                Toast.LENGTH_LONG
+            ).show()
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+
+        startWatchdogServiceNow()
+    }
+
+    private fun startWatchdogServiceNow() {
+        ContextCompat.startForegroundService(this, NetflixWatchdogService.createStartIntent(this))
+        Toast.makeText(this, "自動切替（PayPay両立モード）を開始しました", Toast.LENGTH_SHORT).show()
+        refreshPermissionStatus()
+    }
+
     private fun runThreeSecondPreview() {
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "先に「他のアプリの上に重ねて表示」を許可してください", Toast.LENGTH_LONG).show()
@@ -182,6 +278,61 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshPermissionStatus() {
+        // 1. WRITE_SECURE_SETTINGS
+        val writeSecureGranted = AccessibilityToggleHelper.hasWriteSecureSettingsPermission(this)
+        binding.txtWriteSecureStatus.text = if (writeSecureGranted) "付与済み" else "未付与（ADB権限未付与）"
+        binding.txtWriteSecureStatus.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (writeSecureGranted) R.color.status_ok else R.color.status_warn
+            )
+        )
+
+        // 2. PACKAGE_USAGE_STATS
+        val usageGranted = AccessibilityToggleHelper.hasUsageStatsPermission(this)
+        binding.txtUsageStatsStatus.text = if (usageGranted) "許可済み" else "未許可"
+        binding.txtUsageStatsStatus.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (usageGranted) R.color.status_ok else R.color.status_warn
+            )
+        )
+        binding.btnGrantUsageStats.visibility = if (usageGranted) View.GONE else View.VISIBLE
+
+        // 3. Watchdog Service status
+        val watchdogRunning = NetflixWatchdogService.isServiceRunning
+        binding.txtWatchdogStatus.text = if (watchdogRunning) "稼働中" else "停止中"
+        binding.txtWatchdogStatus.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (watchdogRunning) R.color.status_ok else R.color.text_secondary
+            )
+        )
+        binding.btnToggleWatchdog.text = getString(
+            if (watchdogRunning) R.string.paypay_mode_stop else R.string.paypay_mode_start
+        )
+
+        // 4. Current Accessibility ON/OFF status
+        val a11yEnabled = AccessibilityToggleHelper.isOurServiceEnabled(this)
+        binding.txtCurrentAccessibilityOnOff.text = if (a11yEnabled) "ON" else "OFF"
+        binding.txtCurrentAccessibilityOnOff.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (a11yEnabled) R.color.status_warn else R.color.status_ok
+            )
+        )
+
+        // ADB / SecurityException alert banner
+        val permErr = AccessibilityToggleHelper.lastPermissionError
+        if (!writeSecureGranted || permErr != null) {
+            binding.txtWatchdogError.visibility = View.VISIBLE
+            binding.txtWatchdogError.text = permErr
+                ?: "ADB権限未付与: 自動ON/OFFには PC での setup_paypay_safe.ps1 実行が必要です"
+        } else {
+            binding.txtWatchdogError.visibility = View.GONE
+        }
+
+        // Legacy / base setup status card
         val overlayGranted = Settings.canDrawOverlays(this)
         binding.txtOverlayStatus.text = if (overlayGranted) "許可済み" else "未許可"
         binding.txtOverlayStatus.setTextColor(
@@ -191,24 +342,13 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
-        val a11yEnabled = isAccessibilityServiceEnabled()
-        binding.txtAccessibilityStatus.text = if (a11yEnabled) "有効" else "無効"
+        binding.txtAccessibilityStatus.text = if (a11yEnabled) "有効 (ON)" else "無効 (OFF)"
         binding.txtAccessibilityStatus.setTextColor(
             ContextCompat.getColor(
                 this,
-                if (a11yEnabled) R.color.status_ok else R.color.status_warn
+                if (a11yEnabled) R.color.status_ok else R.color.text_secondary
             )
         )
-    }
-
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        if (NetflixAdShieldService.isServiceRunning) return true
-        val expected = ComponentName(this, NetflixAdShieldService::class.java).flattenToString()
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-        return enabledServices.split(':').any { it.equals(expected, ignoreCase = true) }
     }
 
     private fun refreshDiagnosticLogView() {

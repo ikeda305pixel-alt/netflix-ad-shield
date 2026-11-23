@@ -8,4 +8,12 @@
     <string name="cover_force_dismiss">強制解除（1タップ）</string>
     <string name="diag_pill_label">ログ採取</string>
     <string name="diag_log_empty">まだ診断スナップショットはありません。</string>
+    <string name="watchdog_channel_name">自動切替監視（PayPay両立モード）</string>
+    <string name="watchdog_channel_desc">Netflix表示中のみユーザー補助をONにし、他アプリ移動時に即OFFへ戻すための常駐通知です。</string>
+    <string name="watchdog_notif_title">Netflix Ad Shield（PayPay両立モード）</string>
+    <string name="watchdog_notif_stop_action">監視停止＆OFF</string>
+    <string name="paypay_mode_start">自動切替（PayPay両立モード）を開始</string>
+    <string name="paypay_mode_stop">自動切替（PayPay両立モード）を停止</string>
+    <string name="paypay_force_off">今すぐユーザー補助を強制OFFにする</string>
+    <string name="paypay_adb_hint">※ 初回のみPC接続してプロジェクトルートの setup_paypay_safe.ps1 を実行すると、WRITE_SECURE_SETTINGS と使用状況アクセス権限を自動付与できます。</string>
 </resources>
