@@ -23,6 +23,9 @@ import com.antigravity.netflixadshield.service.AccessibilityToggleResult
 import com.antigravity.netflixadshield.service.NetflixWatchdogService
 import com.antigravity.netflixadshield.service.OverlayCoverManager
 import com.antigravity.netflixadshield.service.VolumeController
+import com.antigravity.netflixadshield.shizuku.ShizukuAvailability
+import com.antigravity.netflixadshield.shizuku.ShizukuGrantManager
+import com.antigravity.netflixadshield.shizuku.ShizukuGrantOutcome
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var logStore: DiagnosticLogStore
     private lateinit var overlayManager: OverlayCoverManager
     private lateinit var volumeController: VolumeController
+    private lateinit var shizukuGrantManager: ShizukuGrantManager
 
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var previewJob: Job? = null
@@ -58,6 +62,20 @@ class MainActivity : AppCompatActivity() {
         logStore = DiagnosticLogStore(this)
         overlayManager = OverlayCoverManager(this)
         volumeController = VolumeController(this)
+        shizukuGrantManager = ShizukuGrantManager(
+            context = this,
+            onStateChanged = {
+                if (!isFinishing && !isDestroyed) {
+                    refreshPermissionStatus()
+                }
+            },
+            onOutcome = { outcome ->
+                if (!isFinishing && !isDestroyed) {
+                    handleShizukuOutcome(outcome)
+                }
+            }
+        )
+        shizukuGrantManager.register()
 
         bindInitialValues()
         bindListeners()
@@ -71,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        shizukuGrantManager.unregister()
         stopPreview()
         uiScope.cancel()
         super.onDestroy()
@@ -90,6 +109,10 @@ class MainActivity : AppCompatActivity() {
     private fun bindListeners() {
         binding.btnGrantUsageStats.setOnClickListener {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        }
+
+        binding.btnGrantViaShizuku.setOnClickListener {
+            shizukuGrantManager.triggerOneTapGrant(this)
         }
 
         binding.btnToggleWatchdog.setOnClickListener {
@@ -113,7 +136,7 @@ class MainActivity : AppCompatActivity() {
                 is AccessibilityToggleResult.PermissionDenied -> {
                     Toast.makeText(
                         this,
-                        "ADB権限未付与のため自動OFF不可。setup_paypay_safe.ps1 を実行するか手動でOFFにしてください",
+                        "ADB権限未付与のため自動OFF不可。Shizukuボタンで権限付与するか手動でOFFにしてください",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -197,6 +220,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleShizukuOutcome(outcome: ShizukuGrantOutcome) {
+        when (outcome) {
+            ShizukuGrantOutcome.Granted -> {
+                Toast.makeText(
+                    this,
+                    "権限を一括付与しました！もうShizukuやワイヤレスデバッグをOFFにしても使えます。",
+                    Toast.LENGTH_LONG
+                ).show()
+                refreshPermissionStatus()
+            }
+            ShizukuGrantOutcome.OpenedShizukuApp -> {
+                Toast.makeText(
+                    this,
+                    "Shizukuで「開始」を押してサービス起動後、このアプリに戻ってもう一度タップしてください",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            ShizukuGrantOutcome.OpenedPlayStore -> {
+                Toast.makeText(
+                    this,
+                    "先に Google Play から「Shizuku」をインストール＆起動してください",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            ShizukuGrantOutcome.RequestedPermission -> {
+                // System/Shizuku permission dialog is now displayed
+            }
+            is ShizukuGrantOutcome.Failed -> {
+                Toast.makeText(this, outcome.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun observeWatchdogState() {
         uiScope.launch {
             NetflixWatchdogService.uiState.collect {
@@ -211,7 +267,7 @@ class MainActivity : AppCompatActivity() {
         if (!AccessibilityToggleHelper.hasWriteSecureSettingsPermission(this)) {
             Toast.makeText(
                 this,
-                "ADB権限未付与（WRITE_SECURE_SETTINGS）。先に PC で setup_paypay_safe.ps1 を実行してください",
+                "先に「Shizukuで権限を一括付与」または PC で setup_paypay_safe.ps1 を実行してください",
                 Toast.LENGTH_LONG
             ).show()
             refreshPermissionStatus()
@@ -322,17 +378,20 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
+        // Shizuku status & button label
+        refreshShizukuUi(writeSecureGranted && usageGranted)
+
         // ADB / SecurityException alert banner
         val permErr = AccessibilityToggleHelper.lastPermissionError
         if (!writeSecureGranted || permErr != null) {
             binding.txtWatchdogError.visibility = View.VISIBLE
             binding.txtWatchdogError.text = permErr
-                ?: "ADB権限未付与: 自動ON/OFFには PC での setup_paypay_safe.ps1 実行が必要です"
+                ?: "ADB権限未付与: 下の「Shizukuで権限を一括付与」を1タップ（または PC で setup_paypay_safe.ps1）"
         } else {
             binding.txtWatchdogError.visibility = View.GONE
         }
 
-        // Legacy / base setup status card
+        // Base setup status card
         val overlayGranted = Settings.canDrawOverlays(this)
         binding.txtOverlayStatus.text = if (overlayGranted) "許可済み" else "未許可"
         binding.txtOverlayStatus.setTextColor(
@@ -349,6 +408,38 @@ class MainActivity : AppCompatActivity() {
                 if (a11yEnabled) R.color.status_ok else R.color.text_secondary
             )
         )
+    }
+
+    private fun refreshShizukuUi(allPrivilegedPermissionsGranted: Boolean) {
+        if (allPrivilegedPermissionsGranted) {
+            binding.txtShizukuStatus.text = "付与済み（Shizuku停止OK）"
+            binding.txtShizukuStatus.setTextColor(ContextCompat.getColor(this, R.color.status_ok))
+            binding.btnGrantViaShizuku.text = getString(R.string.shizuku_grant_btn_done)
+            return
+        }
+
+        when (shizukuGrantManager.getAvailability()) {
+            ShizukuAvailability.READY -> {
+                binding.txtShizukuStatus.text = "接続済み（1タップで付与可能）"
+                binding.txtShizukuStatus.setTextColor(ContextCompat.getColor(this, R.color.status_ok))
+                binding.btnGrantViaShizuku.text = getString(R.string.shizuku_grant_btn)
+            }
+            ShizukuAvailability.NEEDS_PERMISSION -> {
+                binding.txtShizukuStatus.text = "稼働中（タップして連携許可）"
+                binding.txtShizukuStatus.setTextColor(ContextCompat.getColor(this, R.color.status_ok))
+                binding.btnGrantViaShizuku.text = getString(R.string.shizuku_grant_btn)
+            }
+            ShizukuAvailability.NOT_RUNNING -> {
+                binding.txtShizukuStatus.text = "未起動（Shizukuを開いて開始）"
+                binding.txtShizukuStatus.setTextColor(ContextCompat.getColor(this, R.color.status_warn))
+                binding.btnGrantViaShizuku.text = getString(R.string.shizuku_grant_btn_open)
+            }
+            ShizukuAvailability.NOT_INSTALLED -> {
+                binding.txtShizukuStatus.text = "未インストール"
+                binding.txtShizukuStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                binding.btnGrantViaShizuku.text = getString(R.string.shizuku_grant_btn_install)
+            }
+        }
     }
 
     private fun refreshDiagnosticLogView() {

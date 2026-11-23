@@ -15,5 +15,9 @@
     <string name="paypay_mode_start">自動切替（PayPay両立モード）を開始</string>
     <string name="paypay_mode_stop">自動切替（PayPay両立モード）を停止</string>
     <string name="paypay_force_off">今すぐユーザー補助を強制OFFにする</string>
-    <string name="paypay_adb_hint">※ 初回のみPC接続してプロジェクトルートの setup_paypay_safe.ps1 を実行すると、WRITE_SECURE_SETTINGS と使用状況アクセス権限を自動付与できます。</string>
+    <string name="shizuku_grant_btn">Shizukuで権限を一括付与（PC・コマンド不要）</string>
+    <string name="shizuku_grant_btn_open">Shizukuを開く（先に「開始」を押してください）</string>
+    <string name="shizuku_grant_btn_install">Shizukuをインストール（Google Play）</string>
+    <string name="shizuku_grant_btn_done">Shizuku権限付与済み（再付与可）</string>
+    <string name="paypay_adb_hint">※ スマホ単体なら「Shizuku」を起動して上のボタンを1タップするだけで完了（初回のみ・再起動後も維持）。PCがある場合は setup_paypay_safe.ps1 でも付与できます。</string>
 </resources>

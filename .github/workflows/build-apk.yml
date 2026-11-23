@@ -33,33 +33,31 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew testDebugUnitTest assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.1.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.2.0.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: netflix-ad-shield-v1.1.0.apk
-          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.1.0.apk
+          name: netflix-ad-shield-v1.2.0.apk
+          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.2.0.apk
           retention-days: 14
 
       - name: Create GitHub Release with APK
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.0
-          name: Netflix Ad Shield v1.1.0 (PayPay両立・ユーザー補助自動ON/OFF対応)
+          tag_name: v1.2.0
+          name: Netflix Ad Shield v1.2.0 (Shizuku内蔵・PC不要ワンタップ権限付与対応)
           body: |
-            ## Netflix Ad Shield v1.1.0
+            ## Netflix Ad Shield v1.2.0
 
-            PayPay等の決済アプリによるユーザー補助制限を回避するため、**Netflixがフォアグラウンドにある間だけ自動でユーザー補助をONにし、Netflixから離れたら即座にOFFへ戻す「PayPay両立モード」**を追加しました。
+            **PC不要・コマンド入力ゼロ**で PayPay両立モードの権限（`WRITE_SECURE_SETTINGS` + `GET_USAGE_STATS`）を付与できる **Shizuku ワンタップ連携ボタン** をアプリ内に内蔵しました。
 
-            ### 主な新機能
-            - **軽量フォアグラウンド監視 (`NetflixWatchdogService`)**: `UsageStatsManager` で1.5秒間隔ポーリング。画面消灯時は自動停止＆ユーザー補助OFFで省電力＋安全設計。
-            - **非破壊ユーザー補助切替 (`AccessibilityToggleHelper`)**: `WRITE_SECURE_SETTINGS` を使い、他アプリのユーザー補助設定を消さずに自身のコンポーネントのみ安全に追加・削除。
-            - **即時OFF＆チャタリング防止**: PayPayやホーム画面へ切り替わったら遅延なしで即OFF。SystemUIの一瞬の表示（音量バー等）のみ1回（1.5秒）猶予。
-            - **リアルタイム状態UI＆緊急強制OFFボタン**: 権限2種・監視サービス状態・ユーザー補助ON/OFFを常時表示。
-            - **初回ADB権限付与スクリプト (`setup_paypay_safe.ps1`)**: ビルド・インストール・権限付与を一括実行。
-          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.1.0.apk
+            ### 新機能
+            - **Shizuku 1タップ権限付与 (`ShizukuGrantManager` / `ShizukuPermissionGranterService`)**: Shizukuを起動した状態でアプリ内の「Shizukuで権限を一括付与」を押すだけで、2つの権限を自動付与（コマンド入力・aShell・PCすべて不要）。
+            - **初回1回きりで永続**: 付与した `WRITE_SECURE_SETTINGS` と使用状況アクセス権限は端末再起動後も保持されるため、設定後はShizukuやワイヤレスデバッグをOFFに戻して運用できます。
+            - **PayPay両立モード＆既存機能すべて維持**: ユニットテスト32件全件PASS。
+          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.2.0.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
