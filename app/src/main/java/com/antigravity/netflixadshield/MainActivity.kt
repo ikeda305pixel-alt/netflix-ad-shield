@@ -173,6 +173,9 @@ class MainActivity : AppCompatActivity() {
         }
         binding.switchDiagnosticMode.setOnCheckedChangeListener { _, isChecked ->
             prefs.diagnosticModeEnabled = isChecked
+            if (!isChecked) {
+                com.antigravity.netflixadshield.service.NetflixAdShieldService.dismissAllOverlaysImmediately()
+            }
             val msg = if (isChecked) {
                 "診断モードON: Netflix画面右上に「ログ採取」ボタンが表示されます"
             } else {

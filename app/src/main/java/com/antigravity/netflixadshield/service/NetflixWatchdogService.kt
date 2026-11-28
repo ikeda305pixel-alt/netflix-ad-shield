@@ -220,6 +220,9 @@ class NetflixWatchdogService : Service() {
     }
 
     private fun applyToggle(enable: Boolean, detectedPkg: String?, statusLabel: String) {
+        if (!enable) {
+            NetflixAdShieldService.dismissAllOverlaysImmediately()
+        }
         when (val result = AccessibilityToggleHelper.setServiceEnabled(this, enable)) {
             is AccessibilityToggleResult.Success -> {
                 updateNotificationIfChanged(statusLabel)

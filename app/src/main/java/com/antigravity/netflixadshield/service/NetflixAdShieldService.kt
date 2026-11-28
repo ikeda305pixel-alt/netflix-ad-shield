@@ -69,6 +69,7 @@ class NetflixAdShieldService : AccessibilityService() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         isServiceRunning = true
+        activeInstance = this
 
         // When enabled dynamically by NetflixWatchdogService while Netflix is already visible,
         // begin scanning immediately without waiting for the next accessibility event.
@@ -87,26 +88,22 @@ class NetflixAdShieldService : AccessibilityService() {
             return
         }
 
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val nowNetflix = (pkg == NETFLIX_PACKAGE)
-            if (nowNetflix != isNetflixForeground) {
-                isNetflixForeground = nowNetflix
-                if (isNetflixForeground) {
-                    onNetflixEntered()
-                } else {
-                    onNetflixLeft()
-                }
+        if (pkg != NETFLIX_PACKAGE) {
+            if (isNetflixForeground &&
+                (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || findNetflixRootWindow() == null)
+            ) {
+                isNetflixForeground = false
+                onNetflixLeft()
             }
+            return
         }
 
-        if (pkg == NETFLIX_PACKAGE) {
-            if (!isNetflixForeground) {
-                isNetflixForeground = true
-                onNetflixEntered()
-            }
-            if (prefs.isMasterEnabled) {
-                scanNetflixWindow(trigger = "event")
-            }
+        if (!isNetflixForeground) {
+            isNetflixForeground = true
+            onNetflixEntered()
+        }
+        if (prefs.isMasterEnabled) {
+            scanNetflixWindow(trigger = "event")
         }
     }
 
@@ -114,8 +111,20 @@ class NetflixAdShieldService : AccessibilityService() {
         cleanupEverything()
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        isServiceRunning = false
+        if (activeInstance === this) {
+            activeInstance = null
+        }
+        cleanupEverything()
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         isServiceRunning = false
+        if (activeInstance === this) {
+            activeInstance = null
+        }
         try {
             unregisterReceiver(screenOffReceiver)
         } catch (_: Exception) {
@@ -137,8 +146,11 @@ class NetflixAdShieldService : AccessibilityService() {
     }
 
     private fun onNetflixLeft() {
+        isNetflixForeground = false
         stopPolling()
-        overlayManager.hideDiagnosticPill()
+        if (::overlayManager.isInitialized) {
+            overlayManager.hideAll()
+        }
         applyAction(
             stateMachine.onScan(
                 nowMs = SystemClock.elapsedRealtime(),
@@ -153,6 +165,11 @@ class NetflixAdShieldService : AccessibilityService() {
         pollJob = serviceScope.launch {
             while (isActive && isNetflixForeground) {
                 delay(POLL_INTERVAL_MS)
+                // Re-verify Netflix is still actually on screen (catches gesture-nav Home swipes)
+                if (findNetflixRootWindow() == null) {
+                    onNetflixLeft()
+                    break
+                }
                 updateDiagnosticPillVisibility()
                 if (prefs.isMasterEnabled) {
                     scanNetflixWindow(trigger = "poll")
@@ -169,7 +186,7 @@ class NetflixAdShieldService : AccessibilityService() {
     }
 
     private fun updateDiagnosticPillVisibility() {
-        if (isNetflixForeground && prefs.diagnosticModeEnabled) {
+        if (isNetflixForeground && prefs.diagnosticModeEnabled && findNetflixRootWindow() != null) {
             overlayManager.showDiagnosticPill {
                 captureDiagnosticSnapshotManually()
             }
@@ -187,7 +204,13 @@ class NetflixAdShieldService : AccessibilityService() {
     }
 
     private fun scanNetflixWindow(trigger: String) {
-        val root = findNetflixRootWindow() ?: return
+        val root = findNetflixRootWindow()
+        if (root == null) {
+            if (isNetflixForeground) {
+                onNetflixLeft()
+            }
+            return
+        }
 
         stateMachine.updateThresholds(
             endDebounceMs = DEFAULT_END_DEBOUNCE_MS,
@@ -314,5 +337,15 @@ class NetflixAdShieldService : AccessibilityService() {
         @Volatile
         var isServiceRunning: Boolean = false
             private set
+
+        @Volatile
+        private var activeInstance: NetflixAdShieldService? = null
+
+        fun dismissAllOverlaysImmediately() {
+            val instance = activeInstance ?: return
+            instance.serviceScope.launch(Dispatchers.Main.immediate) {
+                instance.cleanupEverything()
+            }
+        }
     }
 }

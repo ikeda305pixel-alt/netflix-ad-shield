@@ -33,31 +33,31 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew testDebugUnitTest assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.2.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/netflix-ad-shield-v1.2.1.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: netflix-ad-shield-v1.2.0.apk
-          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.2.0.apk
+          name: netflix-ad-shield-v1.2.1.apk
+          path: app/build/outputs/apk/debug/netflix-ad-shield-v1.2.1.apk
           retention-days: 14
 
       - name: Create GitHub Release with APK
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.0
-          name: Netflix Ad Shield v1.2.0 (Shizuku内蔵・PC不要ワンタップ権限付与対応)
+          tag_name: v1.2.1
+          name: Netflix Ad Shield v1.2.1 (「ログ採取」オーバーレイ残留バグ修正)
           body: |
-            ## Netflix Ad Shield v1.2.0
+            ## Netflix Ad Shield v1.2.1
 
-            **PC不要・コマンド入力ゼロ**で PayPay両立モードの権限（`WRITE_SECURE_SETTINGS` + `GET_USAGE_STATS`）を付与できる **Shizuku ワンタップ連携ボタン** をアプリ内に内蔵しました。
+            Netflixを閉じてホーム画面に戻ったあとも右上の「ログ採取」フローティングボタンが画面に残り続ける不具合を修正しました。
 
-            ### 新機能
-            - **Shizuku 1タップ権限付与 (`ShizukuGrantManager` / `ShizukuPermissionGranterService`)**: Shizukuを起動した状態でアプリ内の「Shizukuで権限を一括付与」を押すだけで、2つの権限を自動付与（コマンド入力・aShell・PCすべて不要）。
-            - **初回1回きりで永続**: 付与した `WRITE_SECURE_SETTINGS` と使用状況アクセス権限は端末再起動後も保持されるため、設定後はShizukuやワイヤレスデバッグをOFFに戻して運用できます。
-            - **PayPay両立モード＆既存機能すべて維持**: ユニットテスト32件全件PASS。
-          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.2.0.apk
+            ### 修正内容
+            - **`removeViewImmediate()` による即時破棄**: `OverlayCoverManager` のオーバーレイ破棄（カバー／ログ採取ボタン両方）を非同期 `removeView()` から同期 `windowManager.removeViewImmediate()` に変更。
+            - **`onUnbind()` / `onDestroy()` での確実なクリーンアップ**: PayPay両立モード（Watchdog）によりユーザー補助が自動OFFにされた際も、オーバーレイが確実に破棄されるよう `onUnbind()` をオーバーライドし、Watchdog側からの即時クリアも連動。
+            - **ジェスチャーナビでのホーム復帰検知強化**: ポーリング中および他アプリイベント受信時に `findNetflixRootWindow() == null` を確認し、Netflixが画面から消えたら即座にオーバーレイを破棄。
+          files: app/build/outputs/apk/debug/netflix-ad-shield-v1.2.1.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

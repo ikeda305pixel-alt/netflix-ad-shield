@@ -142,13 +142,7 @@ class OverlayCoverManager(context: Context) {
         coverView = null
         timerTextView = null
         signalTextView = null
-        try {
-            if (view.isAttachedToWindow) {
-                windowManager.removeView(view)
-            }
-        } catch (_: Exception) {
-            // Already removed
-        }
+        removeViewSafelyImmediate(view)
     }
 
     fun showDiagnosticPill(onCaptureClick: () -> Unit) {
@@ -196,18 +190,28 @@ class OverlayCoverManager(context: Context) {
     fun hideDiagnosticPill() {
         val view = diagnosticPillView ?: return
         diagnosticPillView = null
-        try {
-            if (view.isAttachedToWindow) {
-                windowManager.removeView(view)
-            }
-        } catch (_: Exception) {
-            // Already removed
-        }
+        removeViewSafelyImmediate(view)
     }
 
     fun hideAll() {
         hideCover()
         hideDiagnosticPill()
+    }
+
+    private fun removeViewSafelyImmediate(view: View) {
+        try {
+            windowManager.removeViewImmediate(view)
+        } catch (_: IllegalArgumentException) {
+            // View was already detached from WindowManager
+        } catch (_: Exception) {
+            try {
+                if (view.isAttachedToWindow) {
+                    windowManager.removeView(view)
+                }
+            } catch (_: Exception) {
+                // Best-effort cleanup
+            }
+        }
     }
 
     private fun formatSignal(signal: String?): String {
